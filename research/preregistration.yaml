@@ -1,0 +1,39 @@
+# 预注册（2026-11-01，在查看任何事件研究结果之前提交）
+# 只有这里列出的检验计入主结论；其余结果一律标为“探索性”。
+version: 1
+data:
+  prices: ellendan/a-share-prices (HuggingFace, 主板, 不复权, 2005-2026-03)
+  events: 东方财富数据中心 业绩预告 (akshare.stock_yjyg_em), 2014-2025 各报告期
+  sample: 2015-01-01 至 2026-02（留出 20 个交易日持有期）
+universe:
+  board: 主板（数据集只含主板）
+  exclude: [ST（由涨停幅度 5% 反推）, 上市不足 60 个交易日, 近 20 日日均成交额 < 3000 万元]
+timing:
+  notice_precision: day          # 只知道日期 -> 视为盘后发布
+  t0: 公告日后第一个交易日
+execution:
+  entry: 开盘价；开盘即涨停或停牌则顺延，最多 3 日，否则放弃
+  exit: 持有期末收盘；收盘跌停或停牌则顺延
+  costs: 佣金 2.5bp×2 + 滑点 10bp×2 + 卖出印花税（按日期）
+benchmark_for_abnormal: 主板等权（剔除 ST）
+primary_metric: tr_skip2   # 第 2 日开盘买入，第 20 日收盘卖出，扣成本后的市场调整收益
+secondary_metrics: [tr_now, info_car_0_1, info_car_2_5, info_car_6_20]
+hypotheses:
+  H1: 好消息类（预增、扭亏、略增、续盈）tr_skip2 > 0
+  H2: 坏消息类（首亏、预减、增亏、续亏、略减）tr_skip2 < 0（用于剔除，不做空）
+  H3: 预增中变动幅度 ≥ 100% 的子组 tr_skip2 > 预增整体
+inference:
+  clustering: 按公告日聚合后做 t 检验
+  multiple_testing: Benjamini-Hochberg, FDR 10%, 覆盖 11 个预告类型 + H3 共 12 个检验
+  robustness: [分年度, 2024 年前后, 剔除最小 30% 流通市值]
+pass_gate: 至少 1 类好消息事件在 FDR 10% 下显著为正，且 2024 年后符号不变
+
+# 追加预注册 v2（2026-11-01，业绩预告结果出来后、查看增减持结果之前）
+# 回购数据（stock_repurchase_em）只有“最新公告日期”，无法得到首次公告时间，存在时间错位，不纳入检验。
+addendum_v2:
+  events: 东方财富 股东增减持（akshare.stock_ggcg_em），按 公告日 计时；同一股票同一公告日同方向合并
+  hypotheses:
+    H4: 增持 tr_skip2 > 0
+    H5: 减持 tr_skip2 < 0（用于剔除）
+    H6: 增持且合计占总股本 ≥ 0.5% 的子组 tr_skip2 > 增持整体
+  inference: 同上；BH 覆盖 H4–H6 共 3 个检验
