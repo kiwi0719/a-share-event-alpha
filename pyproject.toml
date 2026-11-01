@@ -9,11 +9,11 @@ description = "A 股事件驱动 + 因子研究框架：PIT 数据、可成交�
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-dependencies = []
+dependencies = ["numpy>=1.26", "pandas>=2", "duckdb>=1.0", "scipy>=1.11"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
-data = ["pandas>=2", "pyarrow>=15", "duckdb>=1.0", "tushare", "akshare"]
+data = ["pyarrow>=15", "akshare"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
