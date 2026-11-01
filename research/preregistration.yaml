@@ -37,3 +37,22 @@ addendum_v2:
     H5: 减持 tr_skip2 < 0（用于剔除）
     H6: 增持且合计占总股本 ≥ 0.5% 的子组 tr_skip2 > 增持整体
   inference: 同上；BH 覆盖 H4–H6 共 3 个检验
+
+# 追加预注册 v3（2026-11-01，抓取公告列表期间、尚未计算任何合同事件收益之前写定）
+addendum_v3:
+  events: >
+    东方财富公告列表（akshare.stock_notice_report, 重大事项），公告类型 == 重大合同 或标题命中
+    event_alpha.events.contracts.classify_title；正文经东方财富公告正文接口获取，
+    规则抽取 amount_cny（合同/中标金额）与 revenue_ratio（公告自述占上年营业收入比例）。
+  sample: 2015-01-01 至 2026-03-31，主板（数据所限），过滤同 v1
+  dedup: 同一股票同一公告日合并为一个事件，取 revenue_ratio 最大者
+  exclude: [中标候选人/预中标（is_candidate），外币金额且无比例]
+  magnitude: >
+    revenue_ratio；缺失时用 amount_cny / 上一年末流通市值 作为替代比例（单独标记，不进入 H7/H8 主检验）
+  hypotheses:
+    H7: revenue_ratio ≥ 30% 的合同事件 tr_skip2 > 安慰剂（按 compare_placebo 的 Welch t）
+    H8: 按 revenue_ratio 分三档 [<10%, 10%–30%, ≥30%]，tr_skip2 均值随档位单调上升
+    H9: 全部合同事件（不分规模）tr_skip2 > 安慰剂
+  inference: 公告日聚类 t；BH FDR 10% 覆盖 H7、H9 两个检验；H8 作为描述性检验（Jonckheere 方向）
+  pass_gate: H7 在 FDR 10% 下显著为正，且 2024 年后符号不变，且组合回测年化超额（扣成本、对中证1000）≥ 3%
+  robustness: [2024 年前后, 剔除最小 30% 流通市值, 开盘涨停率]
