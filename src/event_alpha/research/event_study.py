@@ -20,12 +20,20 @@ COMMISSION = 0.00025
 SLIPPAGE = 0.001  # 单边
 
 
-def market_series(p: Panel) -> tuple[np.ndarray, np.ndarray]:
-    """等权市场：收盘到收盘收益、开盘到收盘收益（剔除 ST）。"""
+def market_series(p: Panel, ipo_skip: int = 20) -> tuple[np.ndarray, np.ndarray]:
+    """等权市场：收盘到收盘收益、开盘到收盘收益（剔除 ST 与上市不足 ipo_skip 个交易日的新股）。
+
+    新股首日的 prev_close 是发行价，注册制板块首日涨幅动辄 +100%~+300%，不剔除会把等权市场收益
+    在 IPO 密集年份（如 2020、2022）抬高到离谱，所有事件的超额收益被系统性压低。
+    """
     r = p.ret.copy()
-    r[p.is_st] = np.nan
     intraday = p.close / p.open - 1.0
-    intraday[p.is_st] = np.nan
+    first = p.dates.searchsorted(pd.DatetimeIndex(p.list_date))
+    age = np.arange(len(p.dates))[:, None] - first[None, :]
+    young = (age < ipo_skip) & (first[None, :] > 0)
+    mask = p.is_st | young
+    r[mask] = np.nan
+    intraday[mask] = np.nan
     with np.errstate(invalid="ignore"):
         return np.nanmean(r, axis=1), np.nanmean(intraday, axis=1)
 
