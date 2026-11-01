@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+.env
+# 数据与产物一律不入库
+data/
+raw/
+*.parquet
+*.duckdb
+*.csv
+mlruns/
