@@ -149,6 +149,7 @@ def main(panel_path, yjyg_path, ggcg_path, content_path, index_path, out_dir):
         df = pd.DataFrame(cols)
         df["j"] = np.arange(N)
         df["gross"] = gross
+        df["n_nan"] = np.isnan(R[e + 1 : x + 1]).sum(axis=0)
         df["ex"] = gross - mkt
         df = df[mask].copy()
         df["y"] = df.ex.rank(pct=True) - 0.5
@@ -172,7 +173,7 @@ def main(panel_path, yjyg_path, ggcg_path, content_path, index_path, out_dir):
         if test.empty:
             continue
         train = data[(data.date >= pd.Timestamp(year - 3, 1, 1)) & (data.exit_date < pd.Timestamp(year, 1, 1))]
-        res = test[["d", "j", "gross", "ex", "y"]].copy()
+        res = test[["d", "j", "gross", "ex", "y", "n_nan"]].copy()
         for name, feats in (("A", A_FEATS), ("B", B_FEATS)):
             w = ridge(train[feats].to_numpy(float), train.y.to_numpy(float))
             res[f"pred_{name}"] = test[feats].to_numpy(float) @ w
@@ -203,7 +204,10 @@ def main(panel_path, yjyg_path, ggcg_path, content_path, index_path, out_dir):
         bench = csi.asof(p.dates[x]) / csi.asof(p.dates[d]) - 1
         row = dict(d=p.dates[d], bench=bench)
         for name in ("A", "B"):
-            row[f"top5_{name}"] = top(g, f"pred_{name}", 5).gross.mean() - cost
+            t5 = top(g, f"pred_{name}", 5)
+            row[f"top5_{name}"] = t5.gross.mean() - cost
+            row[f"top5_nan_{name}"] = int((t5.n_nan > 0).sum())
+            row[f"top5_codes_{name}"] = ",".join(p.codes[t5.j.to_numpy()])
             k = max(int(len(g) * 0.1), 1)
             row[f"dec_ex_{name}"] = top(g, f"pred_{name}", k).ex.mean()
         port.append(row)
@@ -241,6 +245,16 @@ def main(panel_path, yjyg_path, ggcg_path, content_path, index_path, out_dir):
     by_year.to_csv(out / "by_year.csv")
     print(by_year.round(4).to_string())
     print(pd.concat(coefs, axis=1).filter(like="_B").mean(axis=1).round(4).to_string())
+    print("前 5 只中持有期内有停牌/缺失的比例 A %.3f B %.3f" % (pt.top5_nan_A.sum() / (5 * len(pt)), pt.top5_nan_B.sum() / (5 * len(pt))))
+    # 留出期：数据冻结（2026-03-31）之后的调仓，模型只用 2023–2025 训练
+    ho = pt[pt.index > pd.Timestamp("2026-03-31")]
+    if len(ho):
+        print("== 留出期（2026-04 之后决策）", len(ho), "期")
+        cols = ["bench", "top5_A", "top5_B", "dec_ex_A", "dec_ex_B", "top5_codes_B"]
+        print(ho[cols].round(4).to_string())
+        print("累计：A %.4f  B %.4f  中证1000 %.4f" % ((1 + ho.top5_A).prod() - 1, (1 + ho.top5_B).prod() - 1, (1 + ho.bench).prod() - 1))
+        hic = ic[p.dates[ic.index] > pd.Timestamp("2026-03-31")]
+        print("留出期 IC：A %.4f  B %.4f" % (hic.A.mean(), hic.B.mean()))
 
 
 if __name__ == "__main__":
