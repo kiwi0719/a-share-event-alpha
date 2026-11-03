@@ -50,21 +50,22 @@ def main(day, cb_list, cal_path, out_dir):
     """day 为本次扫描的截止日；从上次扫描日次日起逐个自然日抓公告（周末公告也要抓）。"""
     out = Path(out_dir)
     state = out / "last_scanned.txt"
-    start = pd.Timestamp(state.read_text().strip()) + pd.Timedelta(days=1) if state.exists() else pd.Timestamp(day)
+    # 上次扫描日也重抓一遍：傍晚运行时当天还有晚间公告没发布
+    start = pd.Timestamp(state.read_text().strip()) if state.exists() else pd.Timestamp(day)
     for d in pd.date_range(start, pd.Timestamp(day)):
-        scan(d.strftime("%Y%m%d"), cb_list, cal_path, out)
+        scan(d.strftime("%Y%m%d"), cb_list, cal_path, out, refresh=True)
         state.write_text(d.strftime("%Y%m%d"))
     report(day, cal_path, out)
 
 
-def scan(day, cb_list, cal_path, out):
+def scan(day, cb_list, cal_path, out, refresh=False):
     (out / "raw").mkdir(parents=True, exist_ok=True)
     cal = pd.read_parquet(cal_path)
     days = sorted(pd.to_datetime(cal[cal.is_open == 1].cal_date))
     d = pd.Timestamp(day)
     nxt = [x for x in days if x > d]
     raw = out / "raw" / f"notices_{day}.parquet"
-    if raw.exists():
+    if raw.exists() and not refresh:
         ns = pd.read_parquet(raw)
     else:
         try:
