@@ -1,0 +1,91 @@
+# 预注册（2026-11-01，在查看任何事件研究结果之前提交）
+# 只有这里列出的检验计入主结论；其余结果一律标为“探索性”。
+version: 1
+data:
+  prices: ellendan/a-share-prices (HuggingFace, 主板, 不复权, 2005-2026-03)
+  events: 东方财富数据中心 业绩预告 (akshare.stock_yjyg_em), 2014-2025 各报告期
+  sample: 2015-01-01 至 2026-02（留出 20 个交易日持有期）
+universe:
+  board: 主板（数据集只含主板）
+  exclude: [ST（由涨停幅度 5% 反推）, 上市不足 60 个交易日, 近 20 日日均成交额 < 3000 万元]
+timing:
+  notice_precision: day          # 只知道日期 -> 视为盘后发布
+  t0: 公告日后第一个交易日
+execution:
+  entry: 开盘价；开盘即涨停或停牌则顺延，最多 3 日，否则放弃
+  exit: 持有期末收盘；收盘跌停或停牌则顺延
+  costs: 佣金 2.5bp×2 + 滑点 10bp×2 + 卖出印花税（按日期）
+benchmark_for_abnormal: 主板等权（剔除 ST）
+primary_metric: tr_skip2   # 第 2 日开盘买入，第 20 日收盘卖出，扣成本后的市场调整收益
+secondary_metrics: [tr_now, info_car_0_1, info_car_2_5, info_car_6_20]
+hypotheses:
+  H1: 好消息类（预增、扭亏、略增、续盈）tr_skip2 > 0
+  H2: 坏消息类（首亏、预减、增亏、续亏、略减）tr_skip2 < 0（用于剔除，不做空）
+  H3: 预增中变动幅度 ≥ 100% 的子组 tr_skip2 > 预增整体
+inference:
+  clustering: 按公告日聚合后做 t 检验
+  multiple_testing: Benjamini-Hochberg, FDR 10%, 覆盖 11 个预告类型 + H3 共 12 个检验
+  robustness: [分年度, 2024 年前后, 剔除最小 30% 流通市值]
+pass_gate: 至少 1 类好消息事件在 FDR 10% 下显著为正，且 2024 年后符号不变
+
+# 追加预注册 v2（2026-11-01，业绩预告结果出来后、查看增减持结果之前）
+# 回购数据（stock_repurchase_em）只有“最新公告日期”，无法得到首次公告时间，存在时间错位，不纳入检验。
+addendum_v2:
+  events: 东方财富 股东增减持（akshare.stock_ggcg_em），按 公告日 计时；同一股票同一公告日同方向合并
+  hypotheses:
+    H4: 增持 tr_skip2 > 0
+    H5: 减持 tr_skip2 < 0（用于剔除）
+    H6: 增持且合计占总股本 ≥ 0.5% 的子组 tr_skip2 > 增持整体
+  inference: 同上；BH 覆盖 H4–H6 共 3 个检验
+
+# 追加预注册 v3（2026-11-01，抓取公告列表期间、尚未计算任何合同事件收益之前写定）
+addendum_v3:
+  events: >
+    东方财富公告列表（akshare.stock_notice_report, 重大事项），公告类型 == 重大合同 或标题命中
+    event_alpha.events.contracts.classify_title；正文经东方财富公告正文接口获取，
+    规则抽取 amount_cny（合同/中标金额）与 revenue_ratio（公告自述占上年营业收入比例）。
+  sample: 2015-01-01 至 2026-03-31，主板（数据所限），过滤同 v1
+  dedup: 同一股票同一公告日合并为一个事件，取 revenue_ratio 最大者
+  exclude: [中标候选人/预中标（is_candidate），外币金额且无比例]
+  magnitude: >
+    revenue_ratio；缺失时用 amount_cny / 上一年末流通市值 作为替代比例（单独标记，不进入 H7/H8 主检验）
+  hypotheses:
+    H7: revenue_ratio ≥ 30% 的合同事件 tr_skip2 > 安慰剂（按 compare_placebo 的 Welch t）
+    H8: 按 revenue_ratio 分三档 [<10%, 10%–30%, ≥30%]，tr_skip2 均值随档位单调上升
+    H9: 全部合同事件（不分规模）tr_skip2 > 安慰剂
+  inference: 公告日聚类 t；BH FDR 10% 覆盖 H7、H9 两个检验；H8 作为描述性检验（Jonckheere 方向）
+  pass_gate: H7 在 FDR 10% 下显著为正，且 2024 年后符号不变，且组合回测年化超额（扣成本、对中证1000）≥ 3%
+  robustness: [2024 年前后, 剔除最小 30% 流通市值, 开盘涨停率]
+
+# 追加预注册 v4（2026-11-02，事件作为因子的消融检验；写定于计算任何融合结果之前）
+addendum_v4:
+  question: 事件特征叠加传统因子后，样本外选股是否有增量（蓝图 v0.3 P2 的简化版）
+  universe: 全市场面板（主板+创业板+科创板，含退市），过滤同 v1；决策日开盘涨停的股票不可买
+  rebalance: 每 20 个交易日调仓一次，决策日 d 收盘后打分，d+1 开盘买入，持有 20 日
+  target: d+1 开盘到 d+20 收盘的收益减同期等权市场，横截面排名
+  features_A_traditional: [mom_20, mom_120_skip20, rev_5, vol_20, log_amt_20, max_ret_20]
+  features_B_event: >
+    A + 截至 d（公告日 <= d）过去 20 / 60 个交易日内：好消息预告(预增/扭亏/略增/续盈)、坏消息预告(首亏/预减/略减/增亏/续亏)、
+    增持、减持、合同(全部)、大合同(占营收>=30%) 的 0/1 指示；预增幅度(截断到 [-100, 500] 后排名)
+  model: 横截面排名标准化后的岭回归（alpha=1），每年初用此前 3 年的调仓截面训练，预测当年；2018–2026 样本外
+  metrics: [样本外平均 Rank IC 及其 t 值, B−A 的 IC 差（按截面配对 t）, 前 5 只等权组合扣成本后相对中证1000年化超额, 前 10% 分组超额]
+  costs: 佣金 2.5bp×2 + 滑点 10bp×2 + 卖出印花税
+  pass_gate: B−A 的 IC 差 > 0 且配对 t > 2，且 B 的前 5 只组合年化超额比 A 高 >= 1 个百分点
+  note: 一次性检验，不调参；若未通过，不再在同一数据上搜索事件特征组合
+
+# 追加预注册 v5（2026-11-02，可转债；写定于下载和查看任何转债价格数据之前）
+addendum_v5:
+  rationale: >
+    对手盘是散户为主的转债市场；小规模转债机构建不了仓，部分公募受评级与流动性限制；
+    条款（强赎/下修/回售）透明可编码；有债底，回撤小于正股。
+  data: Tushare cb_basic（含已退市转债）；新浪日线 OHLC；东方财富转股价值/纯债价值/转股溢价率日序列
+  universe: 沪深可转债；上市满 5 个交易日；距到期 > 60 个交易日；当日有收盘价；20 日平均成交额（成交量×收盘价近似）≥ 100 万元
+  execution: 决策日收盘打分，次日开盘买入，持有到下一个调仓日收盘卖出；成本 佣金 1bp×2 + 滑点 10bp×2，无印花税
+  rebalance: 每 20 个交易日
+  benchmarks: [同调仓日等权全部合格转债, 中证1000（与卫星仓目标比较）]
+  hypotheses:
+    H10: 双低策略（得分 = 收盘价 + 转股溢价率(%)，取最低 10 只等权）扣成本后相对等权转债池年化超额 > 0，按调仓期配对 t > 2
+    H11: 董事会提议下修转股价（公告标题含“向下修正”且含“提议”或“董事会”，不含“不向下修正”“不提议”）后次日开盘买入、持有 20 日，相对等权转债池超额 > 0（公告日聚类 t > 2）
+  robustness: [取最低 20 只, 2018–2023 与 2024 年后分别报告, 剔除收盘价 > 130 元]
+  pass_gate: H10 年化超额 ≥ 3%、t > 2、2024 年后同号，且组合绝对最大回撤 ≤ 20%
+  sample: 2018-01-01 至最新（2018 年前转债数量太少）

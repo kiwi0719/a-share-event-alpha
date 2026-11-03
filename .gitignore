@@ -5,8 +5,8 @@ __pycache__/
 .venv/
 .env
 # 数据与产物一律不入库
-data/
-raw/
+/data/
+/raw/
 *.parquet
 *.duckdb
 *.csv
