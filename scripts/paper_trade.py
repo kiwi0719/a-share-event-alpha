@@ -114,7 +114,7 @@ def pick(panel_path, yjyg, ggcg, content, ledger_path):
 def settle(panel_path, index_path, ledger_path):
     with open(panel_path, "rb") as f:
         p = pickle.load(f)
-    led = pd.read_csv(ledger_path)
+    led = pd.read_csv(ledger_path, dtype={"entry_date": object, "exit_date": object, "status": object})
     idx = pd.read_parquet(index_path)
     csi = idx[idx.code == "sh000852"].set_index("date")["close"]
     csi.index = pd.to_datetime(csi.index)
